@@ -20,7 +20,7 @@ export interface ServiceOptions<T, K extends keyof T> {
     /**
      * Unique service id.
      */
-    id?: string|Token<any>;
+    id?: string|Token<any>|any;
 
     /**
      * Factory used to produce this service.

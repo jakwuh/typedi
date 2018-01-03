@@ -5,6 +5,7 @@
   "license": "MIT",
   "readmeFilename": "README.md",
   "private": true,
+  "main": "src/index.ts",
   "author": {
     "name": "Umed Khudoiberdiev",
     "email": "pleerock.me@gmail.com"

@@ -79,19 +79,19 @@ export class Container {
      * Gets all instances registered in the container of the given service identifier.
      * Used when service defined with multiple: true flag.
      */
-    static getMany<T>(id: string): T[];
+    static getMany<T>(id: string): Promise<T[]>;
 
     /**
      * Gets all instances registered in the container of the given service identifier.
      * Used when service defined with multiple: true flag.
      */
-    static getMany<T>(id: Token<T>): T[];
+    static getMany<T>(id: Token<T>): Promise<T[]>;
 
     /**
      * Gets all instances registered in the container of the given service identifier.
      * Used when service defined with multiple: true flag.
      */
-    static getMany<T>(id: string|Token<T>): T[] {
+    static getMany<T>(id: string|Token<T>): Promise<T[]> {
         return this.globalInstance.getMany(id as any);
     }
 

@@ -64,14 +64,21 @@ export class ContainerInstance {
      * Retrieves the service with given name or type from the service container.
      * Optionally, parameters can be passed in case if instance is initialized in the container for the first time.
      */
-    get<T>(identifier: ServiceIdentifier): T {
+    get<T>(identifier: ServiceIdentifier): Promise<T> {
         let service = this.findService(identifier);
 
         // in the case if service was not found registered we search in the global container for this service
         if (!service) {
             const globalService = Container.of(undefined).findService(identifier);
-            if (globalService && globalService.global === true)
-                service = globalService;
+
+            if (globalService) {
+                if (globalService.global === true) {
+                    service = globalService;
+                } else {
+                    service = {...globalService, value: null};
+                    this.services.push(service);
+                }
+            }
         }
 
         return this.getServiceValue(identifier, service);
@@ -81,20 +88,22 @@ export class ContainerInstance {
      * Gets all instances registered in the container of the given service identifier.
      * Used when service defined with multiple: true flag.
      */
-    getMany<T>(id: string): T[];
+    getMany<T>(id: string): Promise<T[]>;
 
     /**
      * Gets all instances registered in the container of the given service identifier.
      * Used when service defined with multiple: true flag.
      */
-    getMany<T>(id: Token<T>): T[];
+    getMany<T>(id: Token<T>): Promise<T[]>;
 
     /**
      * Gets all instances registered in the container of the given service identifier.
      * Used when service defined with multiple: true flag.
      */
-    getMany<T>(id: string|Token<T>): T[] {
-        return this.filterServices(id).map(service => this.getServiceValue(id, service));
+    getMany<T>(id: string|Token<T>): Promise<T[]> {
+        return Promise.all(
+            this.filterServices(id).map(service => this.getServiceValue(id, service))
+        );
     }
 
     /**
@@ -206,8 +215,7 @@ export class ContainerInstance {
     /**
      * Gets service value.
      */
-    private getServiceValue(identifier: ServiceIdentifier, service: ServiceMetadata<any, any>|undefined): any {
-
+    private async getServiceValue(identifier: ServiceIdentifier, service: ServiceMetadata<any, any>|undefined): Promise<any> {
         // find if instance of this object already initialized in the container and return it if it is
         if (service && service.value !== null && service.value !== undefined)
             return service.value;
@@ -220,7 +228,7 @@ export class ContainerInstance {
             throw new ServiceNotFoundError(identifier);
 
         // at this point we either have type in service registered, either identifier is a target type
-        let type = undefined;
+        let type: any = undefined;
         if (service && service.type) {
             type = service.type;
 
@@ -242,54 +250,64 @@ export class ContainerInstance {
 
         // setup constructor parameters for a newly initialized service
         const paramTypes = type && Reflect && (Reflect as any).getMetadata ? (Reflect as any).getMetadata("design:paramtypes", type) : undefined;
-        let params: any[] = paramTypes ? this.initializeParams(type, paramTypes) : [];
+        let paramsPromises: Promise<any[]> = paramTypes ? this.initializeParams(type, paramTypes) : Promise.resolve([]);
 
         // if factory is set then use it to create service instance
         if (service.factory) {
+            service.value = new Promise(async (resolve) => {
+                // filter out non-service parameters from created service constructor
+                // non-service parameters can be, lets say Car(name: string, isNew: boolean, engine: Engine)
+                // where name and isNew are non-service parameters and engine is a service parameter
+                let params: any[] = (await paramsPromises).filter(param => param !== undefined);
 
-            // filter out non-service parameters from created service constructor
-            // non-service parameters can be, lets say Car(name: string, isNew: boolean, engine: Engine)
-            // where name and isNew are non-service parameters and engine is a service parameter
-            params = params.filter(param => param !== undefined);
+                if (service.factory instanceof Array) {
+                    // use special [Type, "create"] syntax to allow factory services
+                    // in this case Type instance will be obtained from Container and its method "create" will be called
+                    resolve((this.get(service.factory[0]) as any)[service.factory[1]](...params));
 
-            if (service.factory instanceof Array) {
-                // use special [Type, "create"] syntax to allow factory services
-                // in this case Type instance will be obtained from Container and its method "create" will be called
-                service.value = (this.get(service.factory[0]) as any)[service.factory[1]](...params);
-
-            } else { // regular factory function
-                service.value = service.factory(...params);
-            }
-
+                } else { // regular factory function
+                    resolve(service.factory(...params));
+                }
+            });
         } else {  // otherwise simply create a new object instance
             if (!type)
                 throw new MissingProvidedServiceTypeError(identifier);
 
-            params.unshift(null);
-            service.value = new (type.bind.apply(type, params))();
+            service.value = new Promise(async (resolve) => {
+                let params: any[] = await paramsPromises;
+
+                params.unshift(null);
+
+                resolve(new (type.bind(...params))());
+            });
         }
 
-        if (type)
-            this.applyPropertyHandlers(type, service.value);
+        service.value = service.value.then((instance: any) => {
+            if (type)
+                return this.applyPropertyHandlers(type, instance).then(() => instance);
+        }).catch((error: any) => {
+            service.value = null;
+            throw error;
+        });
 
-        return service.value;
+        return await service.value;
     }
 
     /**
      * Initializes all parameter types for a given target service class.
      */
-    private initializeParams(type: Function, paramTypes: any[]): any[] {
-        return paramTypes.map((paramType, index) => {
+    private async initializeParams(type: Function, paramTypes: any[]): Promise<any[]> {
+        return Promise.all(paramTypes.map(async (paramType, index) => {
             const paramHandler = Container.handlers.find(handler => handler.object === type && handler.index === index);
             if (paramHandler)
-                return paramHandler.value(this);
+                return await paramHandler.value(this);
 
             if (paramType && paramType.name && !this.isTypePrimitive(paramType.name)) {
-                return this.get(paramType);
+                return await this.get(paramType);
             }
 
             return undefined;
-        });
+        }));
     }
 
     /**
@@ -302,14 +320,14 @@ export class ContainerInstance {
     /**
      * Applies all registered handlers on a given target class.
      */
-    private applyPropertyHandlers(target: Function, instance: { [key: string]: any }) {
-        Container.handlers.forEach(handler => {
+    private async applyPropertyHandlers(target: Function, instance: { [key: string]: any }) {
+        return Promise.all(Container.handlers.map(async handler => {
             if (typeof handler.index === "number") return;
             if (handler.object.constructor !== target && !(target.prototype instanceof handler.object.constructor))
                 return;
 
-            instance[handler.propertyName] = handler.value(this);
-        });
+            instance[handler.propertyName] = await handler.value(this);
+        }));
     }
 
 }
