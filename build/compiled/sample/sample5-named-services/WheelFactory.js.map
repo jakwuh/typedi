@@ -1,0 +1,1 @@
+{"version":3,"file":"WheelFactory.js","sourceRoot":"","sources":["../../../../sample/sample5-named-services/WheelFactory.ts"],"names":[],"mappings":";;;;;;;;AAAA,yCAAwC;AAIxC;IAAA;IAQA,CAAC;IAJG,6BAAM,GAAN;QACI,OAAO,CAAC,GAAG,CAAC,kBAAkB,GAAG,IAAI,CAAC,IAAI,GAAG,aAAa,CAAC,CAAC;IAChE,CAAC;IANQ,YAAY;QADxB,eAAO,CAAC,eAAe,CAAC;OACZ,YAAY,CAQxB;IAAD,mBAAC;CAAA,AARD,IAQC;AARY,oCAAY"}

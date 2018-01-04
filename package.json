@@ -5,7 +5,8 @@
   "license": "MIT",
   "readmeFilename": "README.md",
   "private": true,
-  "main": "src/index.ts",
+  "main": "build/compiled/src/index.js",
+  "types": "build/compiled/src/index.d.ts",
   "author": {
     "name": "Umed Khudoiberdiev",
     "email": "pleerock.me@gmail.com"
